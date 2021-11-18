@@ -1,0 +1,6 @@
+*.csv
+*.log
+*.xlsx
+*.pyc
+/etc
+/lib/__pycache__
