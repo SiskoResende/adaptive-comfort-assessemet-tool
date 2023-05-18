@@ -1,6 +1,15 @@
+.gitignore
+
+/tmp
+**/teste
+**/__pycache__
+**/.ipynb_checkpoints
+
 *.csv
 *.log
 *.xlsx
 *.pyc
-/etc
-/lib/__pycache__
+*.zip
+*.pyc
+*.tmp
+*.ipynb
