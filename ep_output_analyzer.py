@@ -113,6 +113,61 @@ def calculate_ach(df, n_br, n_mod, location):
     df.columns = df.columns.str.strip()
     return df.iloc[:,[1,19,22,-2,-1]]
 
+def apply_calculations(csv_data, outdoor_temperature, prev_ext_air_temp_last_hours, prev_ext_air_temp_column_name):
+    csv_data[prev_ext_air_temp_column_name] = calculate_average_previous_occurrences(csv_data, outdoor_temperature, prev_ext_air_temp_last_hours)
+    ashrae_limits = calculate_ashrae_limits(csv_data[prev_ext_air_temp_column_name])
+    de_dear_limits = calculate_de_dear_limits(csv_data[prev_ext_air_temp_column_name])
+    csv_data[['ASHRAE: lower limits', 'ASHRAE: upper limits']] = ashrae_limits
+    csv_data[['De Dear: lower limits', 'De Dear: upper limits']] = de_dear_limits
+    return csv_data
+
+def apply_ashrae_limits(csv_data, zone_name, zone):
+    csv_data[zone_name + ':Is Below ASHRAE Limits'] = csv_data[zone].lt(csv_data['ASHRAE: lower limits'])
+    csv_data[zone_name + ':Is Between ASHRAE Limits'] = csv_data[zone].between(csv_data['ASHRAE: lower limits'], csv_data['ASHRAE: upper limits'])
+    csv_data[zone_name + ':Is Above ASHRAE Limits'] = csv_data[zone].gt(csv_data['ASHRAE: upper limits'])
+    return csv_data
+
+def apply_de_dear_limits(csv_data, zone_name, zone):
+    csv_data[zone_name + ':Is Below De Dear Limits'] = csv_data[zone].lt(csv_data['De Dear: lower limits'])
+    csv_data[zone_name + ':Is Between De Dear Limits'] = csv_data[zone].between(csv_data['De Dear: lower limits'], csv_data['De Dear: upper limits'])
+    csv_data[zone_name + ':Is Above De Dear Limits'] = csv_data[zone].gt(csv_data['De Dear: upper limits'])
+    return csv_data
+
+def make_summary(csv_data, zone_name, zone):
+    min_temperature = float(csv_data[zone].min())
+    mean_temperature = float(csv_data[zone].mean())
+    max_temperature = float(csv_data[zone].max())
+
+    if 'SAL' in zone_name:
+        occupied = csv_data['SCH_OCUP_DORM:Schedule Value [](Hourly)'] == 1
+    elif 'DO' in zone_name:
+        occupied = csv_data['SCH_OCUP_DORM:Schedule Value [](Hourly)'] == 1
+
+    below_ashrae_limit = 100 * csv_data[zone_name + ':Is Below ASHRAE Limits'].sum() / csv_data.shape[0]
+    between_ashrae_limit = 100 * csv_data[zone_name + ':Is Between ASHRAE Limits'].sum() / csv_data.shape[0]
+    above_ashrae_limit = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'].sum() / csv_data.shape[0]
+    below_de_dear_limit = 100 * csv_data[zone_name + ':Is Below De Dear Limits'].sum() / csv_data.shape[0]
+    between_de_dear_limit = 100 * csv_data[zone_name + ':Is Between De Dear Limits'].sum() / csv_data.shape[0]
+    above_de_dear_limit = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'].sum() / csv_data.shape[0]
+    sufficient_ach = 100 * csv_data[zone_name + ':Sufficient ACH'].sum() / csv_data.shape[0]
+    min_ach = float(csv_data[zone_name + ':AFN Zone Infiltration Air Change Rate [ach](Hourly)'].min())
+    mean_ach = float(csv_data[zone_name + ':AFN Zone Infiltration Air Change Rate [ach](Hourly)'].mean())
+    max_ach = float(csv_data[zone_name + ':AFN Zone Infiltration Air Change Rate [ach](Hourly)'].max())
+
+    below_ashrae_limit_when_occupied = 100 * csv_data[zone_name + ':Is Below ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
+    between_ashrae_limit_when_occupied = 100 * csv_data[zone_name + ':Is Between ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
+    above_ashrae_limit_when_occupied = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
+    below_de_dear_limit_when_occupied = 100 * csv_data[zone_name + ':Is Below De Dear Limits'][occupied].sum() / csv_data.shape[0]
+    between_de_dear_limit_when_occupied = 100 * csv_data[zone_name + ':Is Between De Dear Limits'][occupied].sum() / csv_data.shape[0]
+    above_de_dear_limit_when_occupied = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
+    sufficient_ach_when_occupied = 100 * csv_data[zone_name + ':Sufficient ACH'][occupied].sum() / csv_data.shape[0]
+
+    return [building, zone_name, min_temperature, mean_temperature, max_temperature, below_ashrae_limit, between_ashrae_limit, above_ashrae_limit,
+        below_de_dear_limit, between_de_dear_limit, above_de_dear_limit, min_ach, mean_ach, max_ach, sufficient_ach, below_ashrae_limit_when_occupied,
+        between_ashrae_limit_when_occupied, above_ashrae_limit_when_occupied, below_de_dear_limit_when_occupied, between_de_dear_limit_when_occupied,
+        above_de_dear_limit_when_occupied, sufficient_ach_when_occupied]
+
+
 file_folder_source = '/energyplus/output/'
 file_folder_output = '/energyplus/analyzed/'
 outdoor_temperature = 'Environment:Site Outdoor Air Drybulb Temperature [C](Hourly)'
@@ -121,7 +176,7 @@ prev_ext_air_temp_column_name = f'Environment:Prevailing External Air Temperatur
 csv_output = list_files_with_extension(file_folder_source,'.csv')
 eio_output = list_files_with_extension(file_folder_source,'.eio')
 analyzed = 'analyzed'
-resume= [['building',
+summary = [['building',
     'zone_name',
     'min_temperature',
     'mean_temperature',
@@ -162,80 +217,24 @@ for building, data in house.items():
         eio_data = calculate_ach(eio_data,n_br=2,n_mod=1,location=building[:2])
     except:
         pass
-    csv_data[prev_ext_air_temp_column_name] = calculate_average_previous_occurrences(csv_data, outdoor_temperature, prev_ext_air_temp_last_hours)
-    csv_data['ASHRAE: lower limits'], csv_data['ASHRAE: upper limits'] = calculate_ashrae_limits(csv_data[prev_ext_air_temp_column_name])
-    csv_data['De Dear: lower limits'], csv_data['De Dear: upper limits'] = calculate_de_dear_limits(csv_data[prev_ext_air_temp_column_name])
+    csv_data = apply_calculations(csv_data, outdoor_temperature, prev_ext_air_temp_last_hours, prev_ext_air_temp_column_name)
 
     for zone in long_stay_zones:
         if zone in csv_data.columns:
             zone_name = zone.split(':')[0]
             long_stay_zones_code.append(zone_name)
 
-            csv_data[zone_name + ':Is Below ASHRAE Limits'] = csv_data[zone].lt(csv_data['ASHRAE: lower limits'])
-            csv_data[zone_name + ':Is Between ASHRAE Limits'] = csv_data[zone].between(csv_data['ASHRAE: lower limits'], csv_data['ASHRAE: upper limits'])
-            csv_data[zone_name + ':Is Above ASHRAE Limits'] = csv_data[zone].gt(csv_data['ASHRAE: upper limits'])
-
-            csv_data[zone_name + ':Is Below De Dear Limits'] = csv_data[zone].lt(csv_data['De Dear: lower limits'])
-            csv_data[zone_name + ':Is Between De Dear Limits'] = csv_data[zone].between(csv_data['De Dear: lower limits'], csv_data['De Dear: upper limits'])
-            csv_data[zone_name + ':Is Above De Dear Limits'] = csv_data[zone].gt(csv_data['De Dear: upper limits'])
+            csv_data = apply_ashrae_limits(csv_data, zone_name, zone)
+            csv_data = apply_de_dear_limits(csv_data, zone_name, zone)
 
             zone_ach = float(eio_data[eio_data['Zone Name'].isin([zone_name])]['ACH Required'])
             csv_data[zone_name + ':Sufficient ACH'] = csv_data[zone_name + ':AFN Zone Infiltration Air Change Rate [ach](Hourly)'].ge(zone_ach)
 
-            min_temperature = float(csv_data[zone].min())
-            mean_temperature = float(csv_data[zone].mean())
-            max_temperature = float(csv_data[zone].max())
-
-            if 'SAL' in zone_name:
-                occupied = csv_data['SCH_OCUP_DORM:Schedule Value [](Hourly)'] == 1
-            elif 'DO' in zone_name:
-                occupied = csv_data['SCH_OCUP_DORM:Schedule Value [](Hourly)'] == 1
-
-            below_ashrae_limit = 100 * csv_data[zone_name + ':Is Below ASHRAE Limits'].sum() / csv_data.shape[0]
-            between_ashrae_limit = 100 * csv_data[zone_name + ':Is Between ASHRAE Limits'].sum() / csv_data.shape[0]
-            above_ashrae_limit = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'].sum() / csv_data.shape[0]
-            below_de_dear_limit = 100 * csv_data[zone_name + ':Is Below De Dear Limits'].sum() / csv_data.shape[0]
-            between_de_dear_limit = 100 * csv_data[zone_name + ':Is Between De Dear Limits'].sum() / csv_data.shape[0]
-            above_de_dear_limit = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'].sum() / csv_data.shape[0]
-            sufficient_ach = 100 * csv_data[zone_name + ':Sufficient ACH'].sum() / csv_data.shape[0]
-            min_ach = float(csv_data[zone_name + ':AFN Zone Infiltration Air Change Rate [ach](Hourly)'].min())
-            mean_ach = float(csv_data[zone_name + ':AFN Zone Infiltration Air Change Rate [ach](Hourly)'].mean())
-            max_ach = float(csv_data[zone_name + ':AFN Zone Infiltration Air Change Rate [ach](Hourly)'].max())
-
-            below_ashrae_limit_when_occupied = 100 * csv_data[zone_name + ':Is Below ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
-            between_ashrae_limit_when_occupied = 100 * csv_data[zone_name + ':Is Between ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
-            above_ashrae_limit_when_occupied = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
-            below_de_dear_limit_when_occupied = 100 * csv_data[zone_name + ':Is Below De Dear Limits'][occupied].sum() / csv_data.shape[0]
-            between_de_dear_limit_when_occupied = 100 * csv_data[zone_name + ':Is Between De Dear Limits'][occupied].sum() / csv_data.shape[0]
-            above_de_dear_limit_when_occupied = 100 * csv_data[zone_name + ':Is Above ASHRAE Limits'][occupied].sum() / csv_data.shape[0]
-            sufficient_ach_when_occupied = 100 * csv_data[zone_name + ':Sufficient ACH'][occupied].sum() / csv_data.shape[0]
-
-            resume.append([building,
-                            zone_name,
-                            min_temperature,
-                            mean_temperature,
-                            max_temperature,
-                            below_ashrae_limit,
-                            between_ashrae_limit,
-                            above_ashrae_limit,
-                            below_de_dear_limit,
-                            between_de_dear_limit,
-                            above_de_dear_limit,
-                            min_ach,
-                            mean_ach,
-                            max_ach,
-                            sufficient_ach,
-                            below_ashrae_limit_when_occupied,
-                            between_ashrae_limit_when_occupied,
-                            above_ashrae_limit_when_occupied,
-                            below_de_dear_limit_when_occupied,
-                            between_de_dear_limit_when_occupied,
-                            above_de_dear_limit_when_occupied,
-                            sufficient_ach_when_occupied])
+            summary = make_summary(csv_data, zone_name, zone)
 
     csv_data.to_csv(f"{file_folder_output}{building}_{analyzed}.csv", index=False)
 
-resume = pd.DataFrame(resume[1:],columns=resume[0])
-resume.to_csv(f"{file_folder_output}resume.csv", index=False)
+summary = pd.DataFrame(resume[1:],columns=resume[0])
+summary.to_csv(f"{file_folder_output}summary.csv", index=False)
 
 print('END')
