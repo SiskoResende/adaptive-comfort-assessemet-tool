@@ -2,7 +2,7 @@
 import pandas as pd
 import os
 
-# listando arquivos da pasta
+# listando arquivos .csv da pasta
 def listCsvOfFolder(folder):
     files = os.listdir(folder)
     csv_file_path = []
@@ -13,6 +13,18 @@ def listCsvOfFolder(folder):
                 newItem = os.path.join(folder, item)
                 csv_file_path.append(newItem)
     return csv_file_path
+
+# listando arquivos .eio da pasta
+def listEioOfFolder(folder):
+    files = os.listdir(folder)
+    eio_file_path = []
+    eio_file_name = []
+    for item in files:
+        if item[-3:] == 'eio':
+            if item.lower().find('table') < 0:
+                newItem = os.path.join(folder, item)
+                eio_file_path.append(newItem)
+    return eio_file_path
 
 # ler arquivo csv
 def readCSV(file, index_column = 0):
